@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(ggplot2)
+library(dplyr)
 ```
 
 
@@ -72,6 +73,8 @@ mutational_full_data <- mutation_data[which(mutational_data_patients_id  %in% co
 
 #Exploring the different categories in clinical data
 ```{r}
+
+clinical_full_data <- clinical_data[-c(1:4), ]
 colnames(clinical_full_data)
 ```
 ```{r}
@@ -90,8 +93,68 @@ print( median(clinical_full_data$Diagnosis.Age, na.rm = TRUE) )
 
 ```
 ```{r}
+extract_survival_code <- function(status_strings) {
+  status_strings <- as.character(status_strings)
+  
 
+  codes <- sub("^([01]).*", "\\1", status_strings)
+  
+  return(codes)
+}
 ```
 
 
+```{r}
+clinical_full_data$Survival.Status.disease <-  extract_survival_code(clinical_full_data$Disease.specific.Survival.status)
+```
+
+```{r}
+ggplot(clinical_full_data, aes(x = Survival.Status.disease, y = Diagnosis.Age)) +
+  geom_violin(fill = "skyblue", alpha = 0.6, trim = FALSE) +
+  geom_boxplot(width = 0.15, fill = "white", outlier.shape = NA) +
+  labs(
+    title = "Age at Diagnosis by Survival Status (Violin Plot)",
+    x = "Survival Status",
+    y = "Age at Diagnosis"
+  ) +
+  theme_minimal()
+```
+
+
+```{r}
+ggplot(clinical_full_data, aes(x = Sex)) +
+  geom_bar(color = "black", fill = "steelblue") +
+  labs(
+    title = "Number of Diagnoses by Sex",
+    x = "Sex",
+    y = "Number of Diagnosed Patients"
+  ) +
+  theme_minimal()
+```
+
+
+
+```{r}
+ggplot(clinical_full_data, aes(x = Sex, fill = Survival.Status)) +
+  geom_bar(position = "dodge", color = "black") +
+  labs(
+    title = "Sex vs Survival Status",
+    x = "Sex",
+    y = "Patient Count",
+    fill = "Survival Status"
+  ) +
+  theme_minimal()
+
+
+death_stats <- clinical_full_data %>%
+  group_by(Sex) %>%
+  summarise(
+    number_died = sum(Survival.Status == 1, na.rm = TRUE),
+    total = n(),
+    percent_died = round(100 * number_died / total, 2),
+    .groups = "drop"
+  )
+
+death_stats
+```
 
