@@ -8,3 +8,73 @@ date: "2025-11-20"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
+```{r}
+library(ggplot2)
+library(dplyr)
+```
+
+
+#The first thing we want to do before we analyze all of the data is to check and isolate the patients which have all three datasets which is clinical data, mutation data, and expression data. 
+
+```{r}
+
+#First we will read all three data sets 
+
+clinical_data <- read.delim("data_clinical_patient.txt", header = TRUE, stringsAsFactors = FALSE)
+mutation_data <- read.delim("data_mutations.txt", header = TRUE, stringsAsFactors = FALSE)
+rnaseq_data <- read.csv("RNAseq_LIHC.csv", stringsAsFactors = FALSE)
+```
+
+
+```{r}
+extract_id <- function(tcga_codes) {
+  tcga_codes <- as.character(tcga_codes)
+
+  ids <- sub("^TCGA-[A-Z0-9]{2}-([A-Z0-9]{4}).*", "\\1", tcga_codes)
+  
+  return(ids)
+}
+```
+
+
+```{r}
+extract_id_rnaseq <- function(tcga_codes) {
+  tcga_codes <- as.character(tcga_codes)
+
+  ids <- sub("^TCGA.[A-Z0-9]{2}.([A-Z0-9]{4}).*", "\\1", tcga_codes)
+  
+  return(ids)
+}
+```
+
+
+```{r}
+clinical_data_patients_id <- extract_id(tcga_codes = clinical_data$X.Patient.Identifier)
+clinical_data_patients_id <- clinical_data_patients_id[-(1:4)]
+
+mutational_data_patients_id <- unique(extract_id(tcga_codes = mutation_data$Tumor_Sample_Barcode))
+
+rnaseq_data_cleaned <- rnaseq_data[,-1 ]
+
+rnaseq_data_patients_id <- unique(extract_id_rnaseq(tcga_codes = colnames(rnaseq_data)))
+
+common_patients_id <- clinical_data_patients_id[clinical_data_patients_id %in% mutational_data_patients_id &
+clinical_data_patients_id %in% rnaseq_data_patients_id ]
+```
+
+
+```{r}
+clinical_full_data <- clinical_data[ which(clinical_data_patients_id  %in% common_patients_id),  ]
+
+mutational_full_data <- mutation_data[which(mutational_data_patients_id  %in% common_patients_id), ] 
+```
+
+
+```{r}
+colnames(mutational_full_data)
+```
+```{r}
+
+```
+
