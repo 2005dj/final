@@ -106,6 +106,8 @@ extract_survival_code <- function(status_strings) {
 
 ```{r}
 clinical_full_data$Survival.Status.disease <-  extract_survival_code(clinical_full_data$Disease.specific.Survival.status)
+
+clinical_full_data$Survival.Status.disease
 ```
 
 ```{r}
@@ -135,7 +137,7 @@ ggplot(clinical_full_data, aes(x = Sex)) +
 
 
 ```{r}
-ggplot(clinical_full_data, aes(x = Sex, fill = Survival.Status)) +
+ggplot(clinical_full_data, aes(x = Sex, fill = Survival.Status.disease)) +
   geom_bar(position = "dodge", color = "black") +
   labs(
     title = "Sex vs Survival Status",
@@ -149,12 +151,15 @@ ggplot(clinical_full_data, aes(x = Sex, fill = Survival.Status)) +
 death_stats <- clinical_full_data %>%
   group_by(Sex) %>%
   summarise(
-    number_died = sum(Survival.Status == 1, na.rm = TRUE),
+    number_died = sum(Survival.Status.disease == 1, na.rm = TRUE),
     total = n(),
     percent_died = round(100 * number_died / total, 2),
     .groups = "drop"
   )
 
 death_stats
+```
+```{r}
+
 ```
 
