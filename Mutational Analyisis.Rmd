@@ -52,10 +52,12 @@ extract_id_rnaseq <- function(tcga_codes) {
 
 
 ```{r}
+clinical_data_cleaned <- clinical_data[-(1:4), ]
+
 clinical_data_patients_id <- extract_id(tcga_codes = clinical_data$X.Patient.Identifier)
 clinical_data_patients_id <- clinical_data_patients_id[-(1:4)]
 
-mutational_data_patients_id <- unique(extract_id(tcga_codes = mutation_data$Tumor_Sample_Barcode))
+mutation_data_patients_id <- extract_id(tcga_codes = mutation_data$Tumor_Sample_Barcode)
 
 rnaseq_data_cleaned <- rnaseq_data[,-1 ]
 
@@ -69,96 +71,213 @@ clinical_data_patients_id %in% rnaseq_data_patients_id ]
 ```{r}
 clinical_full_data <- clinical_data[ which(clinical_data_patients_id  %in% common_patients_id),  ]
 
-
+mutation_full_data <- mutation_data[ mutational_data_patients_id %in% common_patients_id , ]
 ```
 
 
 ```{r}
 colnames(mutation_data)
 ```
+
+```{r}
+unique(mutation_full_data$Variant_Classification)
+```
+
+
 ```{r}
 
+nonsyn_classes <- c(
+  "Missense_Mutation",
+  "Nonsense_Mutation",
+  "Frame_Shift_Del",
+  "Frame_Shift_Ins",
+  "In_Frame_Del",
+  "In_Frame_Ins",
+  "Splice_Site",
+  "Translation_Start_Site",
+  "Nonstop_Mutation"
+)
 
-build_gene_patient_matrix <- function(mut_df,
-                                      variant_mode = c("all", "non_synonymous", "synonymous")) {
+mutation_nonsyn <- mutation_full_data[
+  mutation_full_data$Variant_Classification %in% nonsyn_classes, 
+]
 
-  variant_mode <- match.arg(variant_mode)
 
-  # Add patient_id extracted from Tumor_Sample_Barcode
-  mut_df$patient_id <- extract_id(mut_df$Tumor_Sample_Barcode)
+```
 
-  # Define mutation type groups
-  nonsynonymous_classes <- c(
-    "Missense_Mutation",
-    "Nonsense_Mutation",
-    "Frame_Shift_Del",
-    "Frame_Shift_Ins",
-    "In_Frame_Del",
-    "In_Frame_Ins",
-    "Splice_Site",
-    "Translation_Start_Site",
-    "Nonstop_Mutation",
-    "Splice_Region"
-  )
+```{r}
 
-  synonymous_classes <- c("Silent")
-
-  # Filter by variant type
-  if (variant_mode == "non_synonymous") {
-    mut_df <- mut_df[mut_df$Variant_Classification %in% nonsynonymous_classes, ]
-
-  } else if (variant_mode == "synonymous") {
-    mut_df <- mut_df[mut_df$Variant_Classification %in% synonymous_classes, ]
-  }
-
-  # Clean missing values
-  mut_df <- mut_df[
-    !is.na(mut_df$patient_id) & mut_df$patient_id != "" &
-    !is.na(mut_df$Hugo_Symbol) & mut_df$Hugo_Symbol != "",
-  ]
-
-  # Build patient × gene count matrix
-  tab <- table(mut_df$patient_id, mut_df$Hugo_Symbol)
-
-  # Convert to 0/1 matrix
-  mat <- ifelse(as.matrix(tab) > 0, 1L, 0L)
-
-  return(t(mat))
+# If patient_id isn't there yet, create it
+if (!"patient_id" %in% colnames(mutation_nonsyn)) {
+  mutation_nonsyn$patient_id <- extract_id(mutation_nonsyn$Tumor_Sample_Barcode)
 }
 
+# Build counts per (patient, gene)
+gene_patient_counts <- with(mutation_nonsyn,
+                            table(patient_id, Hugo_Symbol))
+
+# Convert counts to binary 0/1
+gene_patient_matrix <- ifelse(gene_patient_counts > 0, 1L, 0L)
+
+# Keep row and column names
+rownames(gene_patient_matrix) <- rownames(gene_patient_counts)
+colnames(gene_patient_matrix) <- colnames(gene_patient_counts)
+
+gene_patient_matrix <- as.data.frame(gene_patient_matrix)
+
+
 
 ```
 
 
 ```{r}
-matrix <- build_gene_patient_matrix(mutation_data)
+# Calculate mutation counts per gene
+gene_mutation_counts <- colSums(gene_patient_matrix)
 
-gene_freq <- colSums(matrix)
+# Sort in decreasing order
+gene_mutation_counts_sorted <- sort(gene_mutation_counts, decreasing = TRUE)
 
-# Sort genes by frequency (descending)
-gene_freq_sorted <- sort(gene_freq, decreasing = TRUE)
+# Top 20 genes
+top20_genes <- head(gene_mutation_counts_sorted, 20)
 
-# Pick top 20
-top_n <- 20
-top_genes <- names(gene_freq_sorted)[1:top_n]
+top20_genes
+```
+```{r}
+mutation_top20 <- gene_patient_matrix[, top20_genes]
+```
 
-top_genes
+```{r}
+mutation_mat20 <- as.matrix(mutation_top20)
+dist_mat20 <- dist(mutation_mat20, method = "euclidean")
+hc_wardD2_top20 <- hclust(dist_mat20, method = "ward.D2")
+
+plot(hc_wardD2_top20)
 
 
-mat_top20 <- matrix[, top_genes, drop = FALSE]
+```
 
+```{r}
+k = 4
+clusters_top20 <- cutree(hc_wardD2_top20, k = k)
+
+# Output cluster assignment
+cluster_assignments <- data.frame(
+patient_id = rownames(mutation_mat20),
+cluster = factor(clusters_top20)
+)
+```
+
+```{r}
+
+clinical_with_id <- clinical_full_data %>%
+  mutate(patient_id = extract_id(X.Patient.Identifier))
+
+
+clinical_clustered_top20 <- clinical_with_id %>%
+  inner_join(cluster_assignments, by = "patient_id")
+
+
+print("Merged clinical + cluster data:")
+print(head(clinical_clustered_top20))
+
+
+print("Cluster sizes:")
 
 ```
 ```{r}
+library(pheatmap)
 
-dist_mat <- dist(mat_top20, method = "euclidean")
-hc_ward <- hclust(dist_mat, method = "ward.D2")
-plot(hc_ward, labels = FALSE, main = "Hierarchical Clustering of Patients (Top 20 Mutated Genes)")
+common_ids <- intersect(
+  rownames(mutation_mat20),
+  clinical_clustered_top20$patient_id
+)
+
+mutation_mat20_sub <- mutation_mat20[common_ids, ]
+
+clinical_clustered_sub <- clinical_clustered_top20 %>%
+  filter(patient_id %in% common_ids)
+
+# ---------------------------------------------------------
+# 2. Build annotation dataframe (cluster + sex + age)
+# ---------------------------------------------------------
+
+annotation_df <- clinical_clustered_sub %>%
+  select(patient_id, cluster, Sex, Diagnosis.Age) %>%
+  mutate(
+    cluster = factor(cluster),
+    Sex = factor(Sex)
+  )
+
+rownames(annotation_df) <- annotation_df$patient_id
+annotation_df$patient_id <- NULL
+
+# ---------------------------------------------------------
+# 3. Heatmap
+# ---------------------------------------------------------
+
+pheatmap(
+  mutation_mat20_sub,
+  annotation_row = annotation_df,
+  clustering_method = "ward.D2",
+  show_rownames = FALSE,
+  show_colnames = TRUE,
+  fontsize_col = 8,
+  main = "Top 20 Mutated Genes – Mutation Heatmap with Clinical Annotation",
+  border_color = NA
+)
 ```
+
 ```{r}
-clinical_data$Overall.Survival.Time <-  as.numeric(clinical_data$Overall.Survival.Status)
+library(survival)
+library(survminer)
 
-surv_obj <- Surv(time = clinical_data$Overall.Survival.Time,
-                 event = clinical_data$Overall.Survival.Status)
+clinical_surv <- clinical_clustered_top20 %>%
+  mutate(
+    # Convert status to numeric 0/1
+    Overall.Survival.Status = as.character(Overall.Survival.Status),
+    SurvivalCode = sub("^([01]).*", "\\1", Overall.Survival.Status),
+    SurvivalStatus = ifelse(SurvivalCode == "1", 1, 0),   # 1 = death, 0 = alive
+
+    # Convert time to numeric
+    Overall.Survival..Months. = as.numeric(Overall.Survival..Months.)
+  )
+
+# ---------------------------------------------------------
+# 2. Build survival object
+# ---------------------------------------------------------
+surv_obj <- Surv(
+  time = clinical_surv$Overall.Survival..Months.,
+  event = clinical_surv$SurvivalStatus
+)
+
+# ---------------------------------------------------------
+# 3. Fit Kaplan-Meier survival curves by cluster
+# ---------------------------------------------------------
+fit_km <- survfit(surv_obj ~ cluster, data = clinical_surv)
+
+# ---------------------------------------------------------
+# 4. Plot Kaplan-Meier survival curves
+# ---------------------------------------------------------
+ggsurvplot(
+  fit_km,
+  data = clinical_surv,
+  pval = TRUE,                    # log-rank p-value displayed
+  risk.table = TRUE,              # number at risk below plot
+  conf.int = TRUE,                # confidence intervals
+  xlab = "Time (Months)",
+  ylab = "Overall Survival Probability",
+  title = "Kaplan-Meier Survival Curves by Mutation Cluster",
+  legend.title = "Cluster",
+  palette = "Dark2"
+)
+
+# ---------------------------------------------------------
+# 5. Log-rank test (are survival curves different?)
+# ---------------------------------------------------------
+logrank_res <- survdiff(surv_obj ~ cluster, data = clinical_surv)
+print("Log-rank test for difference between clusters:")
+print(logrank_res)
+
 ```
+
 
