@@ -12,6 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(ggplot2)
 library(dplyr)
+library(survival)
+library(survminer)
 ```
 
 
@@ -67,14 +69,96 @@ clinical_data_patients_id %in% rnaseq_data_patients_id ]
 ```{r}
 clinical_full_data <- clinical_data[ which(clinical_data_patients_id  %in% common_patients_id),  ]
 
-mutational_full_data <- mutation_data[which(mutational_data_patients_id  %in% common_patients_id), ] 
+
 ```
 
 
 ```{r}
-colnames(mutational_full_data)
+colnames(mutation_data)
 ```
 ```{r}
 
+
+build_gene_patient_matrix <- function(mut_df,
+                                      variant_mode = c("all", "non_synonymous", "synonymous")) {
+
+  variant_mode <- match.arg(variant_mode)
+
+  # Add patient_id extracted from Tumor_Sample_Barcode
+  mut_df$patient_id <- extract_id(mut_df$Tumor_Sample_Barcode)
+
+  # Define mutation type groups
+  nonsynonymous_classes <- c(
+    "Missense_Mutation",
+    "Nonsense_Mutation",
+    "Frame_Shift_Del",
+    "Frame_Shift_Ins",
+    "In_Frame_Del",
+    "In_Frame_Ins",
+    "Splice_Site",
+    "Translation_Start_Site",
+    "Nonstop_Mutation",
+    "Splice_Region"
+  )
+
+  synonymous_classes <- c("Silent")
+
+  # Filter by variant type
+  if (variant_mode == "non_synonymous") {
+    mut_df <- mut_df[mut_df$Variant_Classification %in% nonsynonymous_classes, ]
+
+  } else if (variant_mode == "synonymous") {
+    mut_df <- mut_df[mut_df$Variant_Classification %in% synonymous_classes, ]
+  }
+
+  # Clean missing values
+  mut_df <- mut_df[
+    !is.na(mut_df$patient_id) & mut_df$patient_id != "" &
+    !is.na(mut_df$Hugo_Symbol) & mut_df$Hugo_Symbol != "",
+  ]
+
+  # Build patient × gene count matrix
+  tab <- table(mut_df$patient_id, mut_df$Hugo_Symbol)
+
+  # Convert to 0/1 matrix
+  mat <- ifelse(as.matrix(tab) > 0, 1L, 0L)
+
+  return(t(mat))
+}
+
+
+```
+
+
+```{r}
+matrix <- build_gene_patient_matrix(mutation_data)
+
+gene_freq <- colSums(matrix)
+
+# Sort genes by frequency (descending)
+gene_freq_sorted <- sort(gene_freq, decreasing = TRUE)
+
+# Pick top 20
+top_n <- 20
+top_genes <- names(gene_freq_sorted)[1:top_n]
+
+top_genes
+
+
+mat_top20 <- matrix[, top_genes, drop = FALSE]
+
+
+```
+```{r}
+
+dist_mat <- dist(mat_top20, method = "euclidean")
+hc_ward <- hclust(dist_mat, method = "ward.D2")
+plot(hc_ward, labels = FALSE, main = "Hierarchical Clustering of Patients (Top 20 Mutated Genes)")
+```
+```{r}
+clinical_data$Overall.Survival.Time <-  as.numeric(clinical_data$Overall.Survival.Status)
+
+surv_obj <- Surv(time = clinical_data$Overall.Survival.Time,
+                 event = clinical_data$Overall.Survival.Status)
 ```
 
