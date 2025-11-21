@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(ggplot2)
 library(dplyr)
+library(tidyr)
 ```
 
 
@@ -67,16 +68,31 @@ clinical_data_patients_id %in% rnaseq_data_patients_id ]
 clinical_full_data <- clinical_data[ which(clinical_data_patients_id  %in% common_patients_id),  ]
 
 mutational_full_data <- mutation_data[which(mutational_data_patients_id  %in% common_patients_id), ] 
-```
-
-
-
-#Exploring the different categories in clinical data
-```{r}
 
 clinical_full_data <- clinical_data[-c(1:4), ]
+
 colnames(clinical_full_data)
 ```
+
+
+```{r}
+key_vars <- c(
+  "Diagnosis.Age",
+  "Sex",
+  "Ethnicity.Category",
+  "Overall.Survival.Status",
+  "Overall.Survival..Months.", 
+  "Disease.specific.Survival.status",                                                           
+  "Months.of.disease.specific.survival" 
+)
+
+clinical_clean <- clinical_full_data %>%
+  filter(!is.na(X.Patient.Identifier) & X.Patient.Identifier != "") %>%
+  filter(complete.cases(across(all_of(key_vars))))
+```
+
+
+
 ```{r}
 
 #Age Distribution
@@ -161,5 +177,6 @@ death_stats
 ```
 ```{r}
 
+ 
 ```
 
