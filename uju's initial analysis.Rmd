@@ -344,7 +344,7 @@ survdiff(Surv(OS_time, OS_event) ~ Stage_simple, data=stage_data)
 #Stage I (n = 172), Stage II (n = 80), Stage III (n = 82)
 #Log-rank test:χ² = 18.1, df = 2, p = 0.0001 --> meaning the stage-related survival differences are statistically significant.
 # also, this trend is clinically to be expected as later-stage LIHC generally has worse outcomes
-
+#dsf
 ```
 
 
