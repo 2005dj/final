@@ -63,7 +63,7 @@ rnaseq_data_cleaned <- rnaseq_data[,-1 ]
 
 rnaseq_data_patients_id <- unique(extract_id_rnaseq(tcga_codes = colnames(rnaseq_data)))
 
-common_patients_id <- clinical_data_patients_id[clinical_data_patients_id %in% mutational_data_patients_id &
+common_patients_id <- clinical_data_patients_id[clinical_data_patients_id %in% mutation_data_patients_id &
 clinical_data_patients_id %in% rnaseq_data_patients_id ]
 ```
 
@@ -71,7 +71,7 @@ clinical_data_patients_id %in% rnaseq_data_patients_id ]
 ```{r}
 clinical_full_data <- clinical_data[ which(clinical_data_patients_id  %in% common_patients_id),  ]
 
-mutation_full_data <- mutation_data[ mutational_data_patients_id %in% common_patients_id , ]
+mutation_full_data <- mutation_data[ mutation_data_patients_id %in% common_patients_id , ]
 ```
 
 
@@ -107,19 +107,18 @@ mutation_nonsyn <- mutation_full_data[
 
 ```{r}
 
-# If patient_id isn't there yet, create it
+
 if (!"patient_id" %in% colnames(mutation_nonsyn)) {
   mutation_nonsyn$patient_id <- extract_id(mutation_nonsyn$Tumor_Sample_Barcode)
 }
 
-# Build counts per (patient, gene)
 gene_patient_counts <- with(mutation_nonsyn,
                             table(patient_id, Hugo_Symbol))
 
-# Convert counts to binary 0/1
+
 gene_patient_matrix <- ifelse(gene_patient_counts > 0, 1L, 0L)
 
-# Keep row and column names
+
 rownames(gene_patient_matrix) <- rownames(gene_patient_counts)
 colnames(gene_patient_matrix) <- colnames(gene_patient_counts)
 
@@ -228,56 +227,111 @@ pheatmap(
 ```
 
 ```{r}
-library(survival)
-library(survminer)
-
-clinical_surv <- clinical_clustered_top20 %>%
+surv_df <- clinical_clustered_top20 %>%
   mutate(
-    # Convert status to numeric 0/1
+    # convert survival status to numeric (1 = event/death, 0 = censored)
     Overall.Survival.Status = as.character(Overall.Survival.Status),
-    SurvivalCode = sub("^([01]).*", "\\1", Overall.Survival.Status),
-    SurvivalStatus = ifelse(SurvivalCode == "1", 1, 0),   # 1 = death, 0 = alive
+    event = ifelse(grepl("^1", Overall.Survival.Status), 1, 0),
 
-    # Convert time to numeric
-    Overall.Survival..Months. = as.numeric(Overall.Survival..Months.)
+    # convert survival time
+    time = as.numeric(Overall.Survival..Months.),
+
+    # cluster must be a factor for KM curves
+    cluster = factor(cluster)
   )
 
-# ---------------------------------------------------------
-# 2. Build survival object
-# ---------------------------------------------------------
-surv_obj <- Surv(
-  time = clinical_surv$Overall.Survival..Months.,
-  event = clinical_surv$SurvivalStatus
-)
+# remove rows with NA survival time
+surv_df <- surv_df %>% filter(!is.na(time))
 
-# ---------------------------------------------------------
-# 3. Fit Kaplan-Meier survival curves by cluster
-# ---------------------------------------------------------
-fit_km <- survfit(surv_obj ~ cluster, data = clinical_surv)
+# ===============================================================
+# 2. Create Surv() object (just like the guide)
+# ===============================================================
 
-# ---------------------------------------------------------
-# 4. Plot Kaplan-Meier survival curves
-# ---------------------------------------------------------
+surv_obj <- Surv(time = surv_df$time, event = surv_df$event)
+
+# ===============================================================
+# 3. Fit Kaplan–Meier survival curves for clusters
+# ===============================================================
+
+fit <- survfit(surv_obj ~ cluster, data = surv_df)
+
+print(fit)   # optional but mimics guide output
+
+```
+```{r}
 ggsurvplot(
-  fit_km,
-  data = clinical_surv,
-  pval = TRUE,                    # log-rank p-value displayed
-  risk.table = TRUE,              # number at risk below plot
+  fit,
+  data = surv_df,
+  pval = TRUE,                    # log-rank p-value
+  risk.table = TRUE,              # bottom risk table
+  risk.table.col = "strata",      # color matches clusters
   conf.int = TRUE,                # confidence intervals
-  xlab = "Time (Months)",
-  ylab = "Overall Survival Probability",
-  title = "Kaplan-Meier Survival Curves by Mutation Cluster",
+  xlab = "Time (months)",
+  ylab = "Survival probability",
+  title = "Survival Analysis of Mutation-Based Clusters (Top 20 Genes)",
   legend.title = "Cluster",
   palette = "Dark2"
 )
+```
 
-# ---------------------------------------------------------
-# 5. Log-rank test (are survival curves different?)
-# ---------------------------------------------------------
-logrank_res <- survdiff(surv_obj ~ cluster, data = clinical_surv)
-print("Log-rank test for difference between clusters:")
-print(logrank_res)
+
+```{r}
+aggregate(Diagnosis.Age ~ cluster, data = clinical_clustered_top20, summary)
+
+
+library(ggplot2)
+ggplot(clinical_clustered_top20, aes(x = cluster, y = Diagnosis.Age)) +
+  geom_boxplot(fill = "orange") +
+  theme_minimal() +
+  labs(title = "Age Differences Between Clusters",
+       x = "Cluster",
+       y = "Diagnosis Age")
 
 ```
 
+```{r}
+table(clinical_clustered_top20$cluster, clinical_clustered_top20$Sex)
+
+prop.table(table(clinical_clustered_top20$cluster, clinical_clustered_top20$Sex), 1)
+
+
+library(ggplot2)
+ggplot(clinical_clustered_top20, aes(x = cluster, fill = Sex)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  labs(title = "Sex Proportion by Cluster",
+       x = "Cluster",
+       y = "Percentage")
+```
+
+
+```{r}
+table(clinical_clustered_top20$cluster, clinical_clustered_top20$Race.Category)
+prop.table(table(clinical_clustered_top20$cluster, clinical_clustered_top20$Race.Category), 1)
+
+```
+
+```{r}
+
+table(clinical_clustered_top20$cluster, clinical_clustered_top20$American.Joint.Committee.on.Cancer.Tumor.Stage.Code)
+
+
+prop.table(
+  table(
+    clinical_clustered_top20$cluster,
+    clinical_clustered_top20$American.Joint.Committee.on.Cancer.Tumor.Stage.Code
+  ), 1)
+```
+```{r}
+table(clinical_clustered_top20$cluster)
+
+# Simple density plot of age overlap
+ggplot(clinical_clustered_top20, aes(x = Diagnosis.Age, color = cluster)) +
+  geom_density() +
+  theme_minimal() +
+  labs(title = "Age Distribution Overlap Between Clusters",
+       x = "Diagnosis Age",
+       y = "Density")
+```
 
