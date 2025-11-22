@@ -347,3 +347,95 @@ survdiff(Surv(OS_time, OS_event) ~ Stage_simple, data=stage_data)
 
 ```
 
+
+```{r}
+#some more clincal data anylsis
+#colnames(clinical_filtered)
+stage_data <- merged_data %>%
+  mutate(Stage_raw = Neoplasm.Disease.Stage.American.Joint.Committee.on.Cancer.Code) %>%
+  filter(!is.na(Stage_raw), Stage_raw != "") %>%
+  mutate(
+    Stage_simple = case_when(
+      grepl("^STAGE I([^I]|$)", Stage_raw)   ~ "Stage I",   
+      grepl("^STAGE II([^I]|$)", Stage_raw)  ~ "Stage II",  
+      grepl("^STAGE III([^I]|$)", Stage_raw) ~ "Stage III", 
+      grepl("^STAGE IV([^I]|$)", Stage_raw)  ~ "Stage IV",  
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(Stage_simple))
+
+# now add DSS time + event
+stage_data$DSS_time <- suppressWarnings(
+  as.numeric(stage_data$Months.of.disease.specific.survival)
+)
+
+stage_data$DSS_event <- ifelse(
+  grepl("DECEASED", stage_data$Disease.specific.Survival.status),
+  1,
+  0
+)
+
+# keep only rows with valid DSS time
+stage_dss <- stage_data %>% filter(!is.na(DSS_time))
+
+library(survival)
+
+fit_dss <- survfit(Surv(DSS_time, DSS_event) ~ Stage_simple, data = stage_dss)
+plot(fit_dss,
+     main = "Disease-specific survival by tumour stage",
+     xlab = "Time (months)", ylab = "DSS probability")
+
+survdiff(Surv(DSS_time, DSS_event) ~ Stage_simple, data = stage_dss)
+
+#“Disease-specific survival (DSS) could not be analyzed because all patients in the filtered cohort had DSS_event = 0 (no recorded disease-specific deaths). This results in undefined statistics in the log-rank test. Therefore, DSS was excluded from downstream analyses. Overall survival (OS) was used as the primary clinical endpoint.” -chat
+table(merged_data$DSS_event)
+#so theres 0 desease specific deaths. so on to the next analysis. we cant use this one.
+```
+
+
+```{r}
+table(merged_data$American.Joint.Committee.on.Cancer.Tumor.Stage.Code)
+
+merged_data$T_stage <- merged_data$American.Joint.Committee.on.Cancer.Tumor.Stage.Code
+
+# Simplify categories
+merged_data$T_stage_simple <- case_when(
+  grepl("^T1", merged_data$T_stage) ~ "T1",
+  grepl("^T2", merged_data$T_stage) ~ "T2",
+  grepl("^T3", merged_data$T_stage) ~ "T3",
+  grepl("^T4", merged_data$T_stage) ~ "T4",
+  TRUE ~ NA_character_
+)
+
+# larger and more invasive it is the higher number it is. T4 > T1
+table(merged_data$T_stage_simple)
+
+fit <- survfit(Surv(OS_time, OS_event) ~ T_stage_simple, data = merged_data)
+
+plot(
+  fit,
+  col = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a"),
+  lwd = 2,
+  lty = 1:4,
+  xlab = "Time (months)",
+  ylab = "Survival Probability",
+  main = "Overall Survival by T-Stage (LIHC)"
+)
+
+legend(
+  "bottomleft",
+  legend = levels(factor(merged_data$T_stage_simple)),
+  col = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a"),
+  lty = 1:4,
+  lwd = 2,
+  bty = "n"
+)
+
+# so this is good. very statiscally significant
+#Survival analysis by AJCC T-stage (T1–T4) revealed a strong association between tumor invasiveness and patient outcomes. After extracting the primary tumor stage from the clinical dataset, patients were grouped into T1 (n = 174), T2 (n = 87), T3 (n = 75), and T4 (n = 13). Kaplan–Meier curves showed a clear stepwise decline in survival probability with increasing T-stage, with T4 patients demonstrating the poorest outcomes.
+
+#A log-rank test confirmed that these differences were highly statistically significant (χ² = 35, p = 1×10⁻⁷). This indicates that tumor size and local invasion are strong prognostic factors in LIHC, consistent with known clinical behavior of hepatocellular carcinoma and with trends reported in the TCGA LIHC study. - chat.
+```
+
+
