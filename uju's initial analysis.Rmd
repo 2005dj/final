@@ -7,8 +7,6 @@ date: "2025-11-21"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-#fdasdfasdfa
-#bleh bleh bleh
 ```
 
 ```{r}
@@ -125,7 +123,6 @@ merged_data <- merge(patient_mut_counts, clinical_filtered,
 
 
 
-
 ```{r}
 ### survival analysis portion
 colnames(merged_data)
@@ -181,10 +178,6 @@ pval
 
 ```
 
-
-```{r}
-
-```
 
 ```{r}
 # mutation burden vs tumor stage
@@ -516,7 +509,7 @@ pred_prob <- predict(model, type = "response")
 pred_class <- ifelse(pred_prob >= 0.5, 1, 0)
 accuracy <- mean(pred_class == analysis_df$OS_event, na.rm = TRUE)
 accuracy
-
+#sdf
 
 
 ```

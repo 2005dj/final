@@ -83,6 +83,7 @@ colnames(mutation_data)
 unique(mutation_full_data$Variant_Classification)
 ```
 
+#waht the fuck 
 
 ```{r}
 
