@@ -1,0 +1,22 @@
+---
+title: "uju_report_1"
+output: html_document
+date: "2025-11-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+clinical <- read.delim("data_clinical_patient.txt", sep="\t", header=TRUE)
+mutations <- read.delim("data_mutations.txt", sep="\t", header=TRUE)
+rna <- read.csv("RNAseq_LIHC.csv", header=TRUE, row.names=1)
+
+dim(clinical)
+dim(mutations)
+dim(rna)
+head(rna[,1:5])
+
+```
+
