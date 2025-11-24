@@ -437,5 +437,85 @@ legend(
 
 #A log-rank test confirmed that these differences were highly statistically significant (χ² = 35, p = 1×10⁻⁷). This indicates that tumor size and local invasion are strong prognostic factors in LIHC, consistent with known clinical behavior of hepatocellular carcinoma and with trends reported in the TCGA LIHC study. - chat.
 ```
+```{r}
+#clasification - logistic regression
+
+library(dplyr)
+library(tidyr)
+
+# pick a small set of key drivers to avoid overfitting
+drivers <- c("TP53", "CTNNB1", "AXIN1")
+
+driver_status <- mutation_filtered %>%
+  filter(Hugo_Symbol %in% drivers) %>%
+  distinct(Patient_ID, Hugo_Symbol) %>%   # one row per gene–patient pair
+  mutate(mutated = 1) %>%
+  tidyr::pivot_wider(
+    names_from  = Hugo_Symbol,
+    values_from = mutated,
+    values_fill = 0
+  )
+
+head(driver_status)
+
+# make sure age and T-stage are usable
+merged_data$Age <- as.numeric(merged_data$Diagnosis.Age)
+
+merged_data$T_stage <- merged_data$American.Joint.Committee.on.Cancer.Tumor.Stage.Code
+merged_data$T_stage_simple <- case_when(
+  grepl("^T1", merged_data$T_stage) ~ "T1",
+  grepl("^T2", merged_data$T_stage) ~ "T2",
+  grepl("^T3", merged_data$T_stage) ~ "T3",
+  grepl("^T4", merged_data$T_stage) ~ "T4",
+  TRUE ~ NA_character_
+)
+
+# merge with driver mutation flags
+analysis_df <- merged_data %>%
+  left_join(driver_status, by = "Patient_ID") %>%
+  # drop patients with missing key info
+  filter(
+    !is.na(OS_event),
+    !is.na(OS_time),
+    !is.na(Age),
+    !is.na(T_stage_simple)
+  )
+
+# make T-stage a factor with T1 as reference
+analysis_df$T_stage_simple <- factor(
+  analysis_df$T_stage_simple,
+  levels = c("T1", "T2", "T3", "T4")
+)
+
+# if any driver columns are missing (no mutations at all), create them as 0
+for (g in drivers) {
+  if (!(g %in% colnames(analysis_df))) {
+    analysis_df[[g]] <- 0
+  }
+}
+
+str(analysis_df[, c("OS_event", "Age", "T_stage_simple", drivers)])
+
+
+# logistic regression:
+# OS_event (0/1) ~ Age + T-stage + driver gene mutations
+logit_model <- glm(
+  OS_event ~ Age + T_stage_simple + TP53 + CTNNB1 + AXIN1,
+  data   = analysis_df,
+  family = binomial
+)
+
+summary(logit_model)
+
+
+#t stage accuracy
+pred_prob <- predict(model, type = "response")
+pred_class <- ifelse(pred_prob >= 0.5, 1, 0)
+accuracy <- mean(pred_class == analysis_df$OS_event, na.rm = TRUE)
+accuracy
+
+
+
+```
 
 
