@@ -6,7 +6,7 @@ date: "2025-11-21"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
+#sdf
 
 #bleh bleh bleh
 ```
@@ -513,7 +513,7 @@ pred_prob <- predict(model, type = "response")
 pred_class <- ifelse(pred_prob >= 0.5, 1, 0)
 accuracy <- mean(pred_class == analysis_df$OS_event, na.rm = TRUE)
 accuracy
-
+#sdf
 
 
 ```
