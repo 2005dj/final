@@ -63,7 +63,7 @@ rnaseq_data_cleaned <- rnaseq_data[,-1 ]
 
 rnaseq_data_patients_id <- unique(extract_id_rnaseq(tcga_codes = colnames(rnaseq_data)))
 
-common_patients_id <- clinical_data_patients_id[clinical_data_patients_id %in% mutational_data_patients_id &
+common_patients_id <- clinical_data_patients_id[clinical_data_patients_id %in% mutation_data_patients_id &
 clinical_data_patients_id %in% rnaseq_data_patients_id ]
 ```
 
@@ -71,7 +71,7 @@ clinical_data_patients_id %in% rnaseq_data_patients_id ]
 ```{r}
 clinical_full_data <- clinical_data[ which(clinical_data_patients_id  %in% common_patients_id),  ]
 
-mutation_full_data <- mutation_data[ mutational_data_patients_id %in% common_patients_id , ]
+mutation_full_data <- mutation_data[ mutation_data_patients_id %in% common_patients_id , ]
 ```
 
 
@@ -124,6 +124,7 @@ rownames(gene_patient_matrix) <- rownames(gene_patient_counts)
 colnames(gene_patient_matrix) <- colnames(gene_patient_counts)
 
 gene_patient_matrix <- as.data.frame(gene_patient_matrix)
+gene_patient_matrix
 
 
 

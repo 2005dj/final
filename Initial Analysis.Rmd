@@ -20,7 +20,7 @@ library(tidyr)
 ```{r}
 
 #First we will read all three data sets 
-
+  
 clinical_data <- read.delim("data_clinical_patient.txt", header = TRUE, stringsAsFactors = FALSE)
 mutation_data <- read.delim("data_mutations.txt", header = TRUE, stringsAsFactors = FALSE)
 rnaseq_data <- read.csv("RNAseq_LIHC.csv", stringsAsFactors = FALSE)
