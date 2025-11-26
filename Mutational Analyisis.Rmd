@@ -138,32 +138,34 @@ gene_mutation_counts <- colSums(gene_patient_matrix)
 gene_mutation_counts_sorted <- sort(gene_mutation_counts, decreasing = TRUE)
 
 # Top 20 genes
-top20_genes <- head(gene_mutation_counts_sorted, 20)
+top50_genes <- head(gene_mutation_counts_sorted, 50)
 
-top20_genes
-```
-```{r}
-mutation_top20 <- gene_patient_matrix[, top20_genes]
+top50_genes
 ```
 
-```{r}
-mutation_mat20 <- as.matrix(mutation_top20)
-dist_mat20 <- dist(mutation_mat20, method = "euclidean")
-hc_wardD2_top20 <- hclust(dist_mat20, method = "ward.D2")
 
-plot(hc_wardD2_top20)
+```{r}
+mutation_top50 <- gene_patient_matrix[, top50_genes]
+```
+
+```{r}
+mutation_mat50 <- as.matrix(mutation_top50)
+dist_mat50 <- dist(mutation_mat50, method = "euclidean")
+hc_wardD2_top50 <- hclust(dist_mat50, method = "ward.D2")
+
+plot(hc_wardD2_top50)
 
 
 ```
 
 ```{r}
 k = 4
-clusters_top20 <- cutree(hc_wardD2_top20, k = k)
+clusters_top50 <- cutree(hc_wardD2_top50, k = k)
 
 # Output cluster assignment
 cluster_assignments <- data.frame(
-patient_id = rownames(mutation_mat20),
-cluster = factor(clusters_top20)
+patient_id = rownames(mutation_mat50),
+cluster = factor(clusters_top50)
 )
 ```
 
@@ -173,28 +175,27 @@ clinical_with_id <- clinical_full_data %>%
   mutate(patient_id = extract_id(X.Patient.Identifier))
 
 
-clinical_clustered_top20 <- clinical_with_id %>%
+clinical_clustered_top50 <- clinical_with_id %>%
   inner_join(cluster_assignments, by = "patient_id")
 
 
 print("Merged clinical + cluster data:")
-print(head(clinical_clustered_top20))
+print(head(clinical_clustered_top50))
 
 
-print("Cluster sizes:")
 
 ```
 ```{r}
 library(pheatmap)
 
 common_ids <- intersect(
-  rownames(mutation_mat20),
-  clinical_clustered_top20$patient_id
+  rownames(mutation_mat50),
+  clinical_clustered_top50$patient_id
 )
 
-mutation_mat20_sub <- mutation_mat20[common_ids, ]
+mutation_mat50_sub <- mutation_mat50[common_ids, ]
 
-clinical_clustered_sub <- clinical_clustered_top20 %>%
+clinical_clustered_sub <- clinical_clustered_top50 %>%
   filter(patient_id %in% common_ids)
 
 # ---------------------------------------------------------
@@ -216,7 +217,7 @@ annotation_df$patient_id <- NULL
 # ---------------------------------------------------------
 
 pheatmap(
-  mutation_mat20_sub,
+  mutation_mat50_sub,
   annotation_row = annotation_df,
   clustering_method = "ward.D2",
   show_rownames = FALSE,
@@ -228,7 +229,7 @@ pheatmap(
 ```
 
 ```{r}
-surv_df <- clinical_clustered_top20 %>%
+surv_df <- clinical_clustered_top50 %>%
   mutate(
     # convert survival status to numeric (1 = event/death, 0 = censored)
     Overall.Survival.Status = as.character(Overall.Survival.Status),
@@ -274,65 +275,75 @@ ggsurvplot(
   palette = "Dark2"
 )
 ```
-
-
 ```{r}
-aggregate(Diagnosis.Age ~ cluster, data = clinical_clustered_top20, summary)
+mutation_full_data$patient_id <- extract_id(mutation_full_data$Tumor_Sample_Barcode)
 
+# Count mutations per patient
+mutation_burden <- mutation_full_data %>%
+  group_by(patient_id) %>%
+  summarize(mutation_count = n()) %>%
+  as.data.frame()
 
-library(ggplot2)
-ggplot(clinical_clustered_top20, aes(x = cluster, y = Diagnosis.Age)) +
-  geom_boxplot(fill = "orange") +
-  theme_minimal() +
-  labs(title = "Age Differences Between Clusters",
-       x = "Cluster",
-       y = "Diagnosis Age")
-
-```
-
-```{r}
-table(clinical_clustered_top20$cluster, clinical_clustered_top20$Sex)
-
-prop.table(table(clinical_clustered_top20$cluster, clinical_clustered_top20$Sex), 1)
-
-
-library(ggplot2)
-ggplot(clinical_clustered_top20, aes(x = cluster, fill = Sex)) +
-  geom_bar(position = "fill") +
-  scale_y_continuous(labels = scales::percent) +
-  theme_minimal() +
-  labs(title = "Sex Proportion by Cluster",
-       x = "Cluster",
-       y = "Percentage")
+mutation_burden
 ```
 
 
-```{r}
-table(clinical_clustered_top20$cluster, clinical_clustered_top20$Race.Category)
-prop.table(table(clinical_clustered_top20$cluster, clinical_clustered_top20$Race.Category), 1)
 
+```{r}
+burden_matrix <- mutation_burden[, "mutation_count", drop = FALSE]
+rownames(burden_matrix) <- mutation_burden$patient_id
+
+set.seed(123)
+km_burden <- kmeans(burden_matrix, centers = 2, nstart = 25)
+
+burden_clusters <- data.frame(
+  patient_id = rownames(burden_matrix),
+  burden_cluster = factor(km_burden$cluster)
+)
 ```
 
 ```{r}
+clinical_with_id <- clinical_full_data %>%
+  mutate(patient_id = extract_id(X.Patient.Identifier))
 
-table(clinical_clustered_top20$cluster, clinical_clustered_top20$American.Joint.Committee.on.Cancer.Tumor.Stage.Code)
-
-
-prop.table(
-  table(
-    clinical_clustered_top20$cluster,
-    clinical_clustered_top20$American.Joint.Committee.on.Cancer.Tumor.Stage.Code
-  ), 1)
+surv_df_burden <- clinical_with_id %>%
+  inner_join(burden_clusters, by = "patient_id")
 ```
-```{r}
-table(clinical_clustered_top20$cluster)
 
-# Simple density plot of age overlap
-ggplot(clinical_clustered_top20, aes(x = Diagnosis.Age, color = cluster)) +
-  geom_density() +
-  theme_minimal() +
-  labs(title = "Age Distribution Overlap Between Clusters",
-       x = "Diagnosis Age",
-       y = "Density")
+```{r}
+surv_df_burden <- surv_df_burden %>%
+  mutate(
+    Overall.Survival.Status = as.character(Overall.Survival.Status),
+    event = ifelse(grepl("^1", Overall.Survival.Status), 1, 0),
+    time = as.numeric(Overall.Survival..Months.),
+    burden_cluster = factor(burden_cluster)
+  ) %>%
+  filter(!is.na(time))
+```
+
+```{r}
+surv_obj_burden <- Surv(
+  time = surv_df_burden$time,
+  event = surv_df_burden$event
+)
+
+fit_burden <- survfit(surv_obj_burden ~ burden_cluster, data = surv_df_burden)
+fit_burden
+```
+
+```{r}
+ggsurvplot(
+  fit_burden,
+  data = surv_df_burden,
+  pval = TRUE,
+  conf.int = TRUE,
+  risk.table = TRUE,
+  risk.table.col = "strata",
+  xlab = "Time (months)",
+  ylab = "Survival probability",
+  title = "Survival Analysis Based on Mutation Burden Clusters",
+  legend.title = "Mutation Burden Cluster",
+  palette = "Dark2"
+)
 ```
 
