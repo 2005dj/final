@@ -83,6 +83,7 @@ colnames(mutation_data)
 unique(mutation_full_data$Variant_Classification)
 ```
 
+#waht the fuck 
 
 ```{r}
 
@@ -107,19 +108,18 @@ mutation_nonsyn <- mutation_full_data[
 
 ```{r}
 
-# If patient_id isn't there yet, create it
+
 if (!"patient_id" %in% colnames(mutation_nonsyn)) {
   mutation_nonsyn$patient_id <- extract_id(mutation_nonsyn$Tumor_Sample_Barcode)
 }
 
-# Build counts per (patient, gene)
 gene_patient_counts <- with(mutation_nonsyn,
                             table(patient_id, Hugo_Symbol))
 
-# Convert counts to binary 0/1
+
 gene_patient_matrix <- ifelse(gene_patient_counts > 0, 1L, 0L)
 
-# Keep row and column names
+
 rownames(gene_patient_matrix) <- rownames(gene_patient_counts)
 colnames(gene_patient_matrix) <- colnames(gene_patient_counts)
 
@@ -139,32 +139,34 @@ gene_mutation_counts <- colSums(gene_patient_matrix)
 gene_mutation_counts_sorted <- sort(gene_mutation_counts, decreasing = TRUE)
 
 # Top 20 genes
-top20_genes <- head(gene_mutation_counts_sorted, 20)
+top50_genes <- head(gene_mutation_counts_sorted, 50)
 
-top20_genes
-```
-```{r}
-mutation_top20 <- gene_patient_matrix[, top20_genes]
+top50_genes
 ```
 
-```{r}
-mutation_mat20 <- as.matrix(mutation_top20)
-dist_mat20 <- dist(mutation_mat20, method = "euclidean")
-hc_wardD2_top20 <- hclust(dist_mat20, method = "ward.D2")
 
-plot(hc_wardD2_top20)
+```{r}
+mutation_top50 <- gene_patient_matrix[, top50_genes]
+```
+
+```{r}
+mutation_mat50 <- as.matrix(mutation_top50)
+dist_mat50 <- dist(mutation_mat50, method = "euclidean")
+hc_wardD2_top50 <- hclust(dist_mat50, method = "ward.D2")
+
+plot(hc_wardD2_top50)
 
 
 ```
 
 ```{r}
 k = 4
-clusters_top20 <- cutree(hc_wardD2_top20, k = k)
+clusters_top50 <- cutree(hc_wardD2_top50, k = k)
 
 # Output cluster assignment
 cluster_assignments <- data.frame(
-patient_id = rownames(mutation_mat20),
-cluster = factor(clusters_top20)
+patient_id = rownames(mutation_mat50),
+cluster = factor(clusters_top50)
 )
 ```
 
@@ -174,28 +176,27 @@ clinical_with_id <- clinical_full_data %>%
   mutate(patient_id = extract_id(X.Patient.Identifier))
 
 
-clinical_clustered_top20 <- clinical_with_id %>%
+clinical_clustered_top50 <- clinical_with_id %>%
   inner_join(cluster_assignments, by = "patient_id")
 
 
 print("Merged clinical + cluster data:")
-print(head(clinical_clustered_top20))
+print(head(clinical_clustered_top50))
 
 
-print("Cluster sizes:")
 
 ```
 ```{r}
 library(pheatmap)
 
 common_ids <- intersect(
-  rownames(mutation_mat20),
-  clinical_clustered_top20$patient_id
+  rownames(mutation_mat50),
+  clinical_clustered_top50$patient_id
 )
 
-mutation_mat20_sub <- mutation_mat20[common_ids, ]
+mutation_mat50_sub <- mutation_mat50[common_ids, ]
 
-clinical_clustered_sub <- clinical_clustered_top20 %>%
+clinical_clustered_sub <- clinical_clustered_top50 %>%
   filter(patient_id %in% common_ids)
 
 # ---------------------------------------------------------
@@ -217,7 +218,7 @@ annotation_df$patient_id <- NULL
 # ---------------------------------------------------------
 
 pheatmap(
-  mutation_mat20_sub,
+  mutation_mat50_sub,
   annotation_row = annotation_df,
   clustering_method = "ward.D2",
   show_rownames = FALSE,
@@ -229,56 +230,121 @@ pheatmap(
 ```
 
 ```{r}
-library(survival)
-library(survminer)
-
-clinical_surv <- clinical_clustered_top20 %>%
+surv_df <- clinical_clustered_top50 %>%
   mutate(
-    # Convert status to numeric 0/1
+    # convert survival status to numeric (1 = event/death, 0 = censored)
     Overall.Survival.Status = as.character(Overall.Survival.Status),
-    SurvivalCode = sub("^([01]).*", "\\1", Overall.Survival.Status),
-    SurvivalStatus = ifelse(SurvivalCode == "1", 1, 0),   # 1 = death, 0 = alive
+    event = ifelse(grepl("^1", Overall.Survival.Status), 1, 0),
 
-    # Convert time to numeric
-    Overall.Survival..Months. = as.numeric(Overall.Survival..Months.)
+    # convert survival time
+    time = as.numeric(Overall.Survival..Months.),
+
+    # cluster must be a factor for KM curves
+    cluster = factor(cluster)
   )
 
-# ---------------------------------------------------------
-# 2. Build survival object
-# ---------------------------------------------------------
-surv_obj <- Surv(
-  time = clinical_surv$Overall.Survival..Months.,
-  event = clinical_surv$SurvivalStatus
-)
+# remove rows with NA survival time
+surv_df <- surv_df %>% filter(!is.na(time))
 
-# ---------------------------------------------------------
-# 3. Fit Kaplan-Meier survival curves by cluster
-# ---------------------------------------------------------
-fit_km <- survfit(surv_obj ~ cluster, data = clinical_surv)
+# ===============================================================
+# 2. Create Surv() object (just like the guide)
+# ===============================================================
 
-# ---------------------------------------------------------
-# 4. Plot Kaplan-Meier survival curves
-# ---------------------------------------------------------
+surv_obj <- Surv(time = surv_df$time, event = surv_df$event)
+
+# ===============================================================
+# 3. Fit Kaplan–Meier survival curves for clusters
+# ===============================================================
+
+fit <- survfit(surv_obj ~ cluster, data = surv_df)
+
+print(fit)   # optional but mimics guide output
+
+```
+```{r}
 ggsurvplot(
-  fit_km,
-  data = clinical_surv,
-  pval = TRUE,                    # log-rank p-value displayed
-  risk.table = TRUE,              # number at risk below plot
+  fit,
+  data = surv_df,
+  pval = TRUE,                    # log-rank p-value
+  risk.table = TRUE,              # bottom risk table
+  risk.table.col = "strata",      # color matches clusters
   conf.int = TRUE,                # confidence intervals
-  xlab = "Time (Months)",
-  ylab = "Overall Survival Probability",
-  title = "Kaplan-Meier Survival Curves by Mutation Cluster",
+  xlab = "Time (months)",
+  ylab = "Survival probability",
+  title = "Survival Analysis of Mutation-Based Clusters (Top 20 Genes)",
   legend.title = "Cluster",
   palette = "Dark2"
 )
+```
+```{r}
+mutation_full_data$patient_id <- extract_id(mutation_full_data$Tumor_Sample_Barcode)
 
-# ---------------------------------------------------------
-# 5. Log-rank test (are survival curves different?)
-# ---------------------------------------------------------
-logrank_res <- survdiff(surv_obj ~ cluster, data = clinical_surv)
-print("Log-rank test for difference between clusters:")
-print(logrank_res)
+# Count mutations per patient
+mutation_burden <- mutation_full_data %>%
+  group_by(patient_id) %>%
+  summarize(mutation_count = n()) %>%
+  as.data.frame()
 
+mutation_burden
 ```
 
+
+
+```{r}
+burden_matrix <- mutation_burden[, "mutation_count", drop = FALSE]
+rownames(burden_matrix) <- mutation_burden$patient_id
+
+set.seed(123)
+km_burden <- kmeans(burden_matrix, centers = 2, nstart = 25)
+
+burden_clusters <- data.frame(
+  patient_id = rownames(burden_matrix),
+  burden_cluster = factor(km_burden$cluster)
+)
+```
+
+```{r}
+clinical_with_id <- clinical_full_data %>%
+  mutate(patient_id = extract_id(X.Patient.Identifier))
+
+surv_df_burden <- clinical_with_id %>%
+  inner_join(burden_clusters, by = "patient_id")
+```
+
+```{r}
+surv_df_burden <- surv_df_burden %>%
+  mutate(
+    Overall.Survival.Status = as.character(Overall.Survival.Status),
+    event = ifelse(grepl("^1", Overall.Survival.Status), 1, 0),
+    time = as.numeric(Overall.Survival..Months.),
+    burden_cluster = factor(burden_cluster)
+  ) %>%
+  filter(!is.na(time))
+```
+
+```{r}
+surv_obj_burden <- Surv(
+  time = surv_df_burden$time,
+  event = surv_df_burden$event
+)
+
+fit_burden <- survfit(surv_obj_burden ~ burden_cluster, data = surv_df_burden)
+fit_burden
+```
+
+```{r}
+ggsurvplot(
+  fit_burden,
+  data = surv_df_burden,
+  pval = TRUE,
+  conf.int = TRUE,
+  risk.table = TRUE,
+  risk.table.col = "strata",
+  xlab = "Time (months)",
+  ylab = "Survival probability",
+  title = "Survival Analysis Based on Mutation Burden Clusters",
+  legend.title = "Mutation Burden Cluster",
+  palette = "Dark2"
+)
+```
 

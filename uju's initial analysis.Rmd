@@ -6,9 +6,7 @@ date: "2025-11-21"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-#sdf
 
-#bleh bleh bleh
 ```
 
 ```{r}
@@ -125,7 +123,6 @@ merged_data <- merge(patient_mut_counts, clinical_filtered,
 
 
 
-
 ```{r}
 ### survival analysis portion
 colnames(merged_data)
@@ -179,10 +176,9 @@ pval
 
 
 
-
-
-
 ```
+
+
 ```{r}
 # mutation burden vs tumor stage
 
@@ -518,4 +514,4 @@ accuracy
 
 ```
 
-
+#fsalkdfjalskdjfalsdkfjals;dkfja
