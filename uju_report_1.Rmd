@@ -462,3 +462,148 @@ driver_test
 driver_pval
 ```
 
+-----------------------------investigation 7--------------------------------------
+```{r}
+# Investigation 7: Do mutation-based clusters reproduce tumour stage / T-stage?
+
+library(dplyr)
+
+# 1. Attach patient_id to clinical data using the SAME ID format as clustering
+#    (4-character core ID via extract_id)
+clinical_with_id <- clinical_filtered %>%
+  mutate(patient_id = extract_id(X.Patient.Identifier))
+
+# Sanity check: first few IDs
+head(clinical_with_id$patient_id)
+
+# 2. Merge with mutation-based cluster labels
+#    (cluster_assignments should have: patient_id, cluster)
+clinical_clustered <- clinical_with_id %>%
+  inner_join(cluster_assignments, by = "patient_id") %>%
+  mutate(cluster = factor(cluster))
+
+# Check that we actually have rows now
+nrow(clinical_clustered)
+table(clinical_clustered$cluster)
+
+# 3. Create simplified tumour stage and T-stage variables
+clinical_clustered <- clinical_clustered %>%
+  mutate(
+    Stage_simple = case_when(
+      grepl("^STAGE I([^I]|$)", Neoplasm.Disease.Stage.American.Joint.Committee.on.Cancer.Code)   ~ "Stage I",
+      grepl("^STAGE II([^I]|$)", Neoplasm.Disease.Stage.American.Joint.Committee.on.Cancer.Code)  ~ "Stage II",
+      grepl("^STAGE III([^I]|$)", Neoplasm.Disease.Stage.American.Joint.Committee.on.Cancer.Code) ~ "Stage III",
+      grepl("^STAGE IV",        Neoplasm.Disease.Stage.American.Joint.Committee.on.Cancer.Code)   ~ "Stage IV",
+      TRUE ~ NA_character_
+    ),
+    T_stage_simple = case_when(
+      grepl("^T1", American.Joint.Committee.on.Cancer.Tumor.Stage.Code) ~ "T1",
+      grepl("^T2", American.Joint.Committee.on.Cancer.Tumor.Stage.Code) ~ "T2",
+      grepl("^T3", American.Joint.Committee.on.Cancer.Tumor.Stage.Code) ~ "T3",
+      grepl("^T4", American.Joint.Committee.on.Cancer.Tumor.Stage.Code) ~ "T4",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Quick sanity check
+table(clinical_clustered$Stage_simple, useNA = "ifany")
+table(clinical_clustered$T_stage_simple, useNA = "ifany")
+
+# 4. Tumour stage vs mutation cluster
+stage_df <- clinical_clustered %>% filter(!is.na(Stage_simple))
+
+tab_stage_cluster <- table(
+  Cluster = stage_df$cluster,
+  Stage   = stage_df$Stage_simple
+)
+
+tab_stage_cluster
+
+# Drop clusters that have no stage data at all (all-zero rows)
+tab_stage_cluster_clean <- tab_stage_cluster[rowSums(tab_stage_cluster) > 0, , drop = FALSE]
+
+tab_stage_cluster_clean
+
+# Only run chi-square if there is at least 1 non-zero cell
+if (sum(tab_stage_cluster_clean) > 0) {
+  stage_chi  <- chisq.test(tab_stage_cluster_clean)
+  stage_pval <- stage_chi$p.value
+  stage_chi
+  stage_pval
+} else {
+  stage_pval <- NA
+  print("No valid counts for stage × cluster chi-square test.")
+}
+
+# 5. T-stage vs mutation cluster
+tstage_df <- clinical_clustered %>% filter(!is.na(T_stage_simple))
+
+tab_T_cluster <- table(
+  Cluster = tstage_df$cluster,
+  T_stage = tstage_df$T_stage_simple
+)
+
+tab_T_cluster
+
+tab_T_cluster_clean <- tab_T_cluster[rowSums(tab_T_cluster) > 0, , drop = FALSE]
+
+tab_T_cluster_clean
+
+if (sum(tab_T_cluster_clean) > 0) {
+  T_chi  <- chisq.test(tab_T_cluster_clean)
+  T_pval <- T_chi$p.value
+  T_chi
+  T_pval
+} else {
+  T_pval <- NA
+  print("No valid counts for T-stage × cluster chi-square test.")
+}
+
+# 6. Row-wise proportions (optional, for interpretation)
+stage_prop  <- prop.table(tab_stage_cluster_clean, margin = 1)
+Tstage_prop <- prop.table(tab_T_cluster_clean,  margin = 1)
+
+stage_prop
+Tstage_prop
+
+library(ggplot2)
+
+### 1) Tumour stage distribution per cluster (stacked bar plot)
+
+# Convert contingency table to long data frame
+stage_long <- as.data.frame(tab_stage_cluster_clean)
+# Make sure the column names are what we expect
+# (should be "Cluster", "Stage", "Freq")
+colnames(stage_long) <- c("Cluster", "Stage", "Count")
+
+# Plot: proportion of each stage within each cluster
+ggplot(stage_long, aes(x = as.factor(Cluster), y = Count, fill = Stage)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    title = "Tumour Stage Distribution Across Mutation-Based Clusters",
+    x = "Cluster",
+    y = "Proportion within cluster",
+    fill = "Stage"
+  ) +
+  theme_minimal()
+
+
+### 2) T-stage distribution per cluster (stacked bar plot)
+
+tstage_long <- as.data.frame(tab_T_cluster_clean)
+# Columns should be "Cluster", "T_stage", "Freq"
+colnames(tstage_long) <- c("Cluster", "T_stage", "Count")
+
+ggplot(tstage_long, aes(x = as.factor(Cluster), y = Count, fill = T_stage)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    title = "T-Stage Distribution Across Mutation-Based Clusters",
+    x = "Cluster",
+    y = "Proportion within cluster",
+    fill = "T-stage"
+  ) +
+  theme_minimal()
+```
+
